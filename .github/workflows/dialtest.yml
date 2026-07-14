@@ -1,0 +1,81 @@
+name: UI 日常拨测
+
+on:
+  schedule:
+    # 北京时间每天上午 9:00 (UTC 1:00)
+    - cron: '0 1 * * *'
+  # 也支持手动触发
+  workflow_dispatch:
+
+jobs:
+  dialtest:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 拉取代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 安装 Playwright 浏览器
+        run: npx playwright install --with-deps chromium
+
+      - name: 创建 .env 配置文件
+        run: |
+          cat > .env << 'EOF'
+          BASE_URL=${{ secrets.BASE_URL }}
+          LOGIN_USERNAME=${{ secrets.LOGIN_USERNAME }}
+          LOGIN_PASSWORD=${{ secrets.LOGIN_PASSWORD }}
+          LOGIN_CAPTCHA=${{ secrets.LOGIN_CAPTCHA }}
+          SMTP_HOST=${{ secrets.SMTP_HOST }}
+          SMTP_PORT=${{ secrets.SMTP_PORT }}
+          SMTP_USER=${{ secrets.SMTP_USER }}
+          SMTP_PASS=${{ secrets.SMTP_PASS }}
+          ALERT_TO=${{ secrets.ALERT_TO }}
+          EOF
+
+      - name: 执行拨测
+        id: dialtest
+        run: npx playwright test --reporter=list,html
+        continue-on-error: true
+
+      - name: 生成 HTML 报告
+        if: always()
+        run: |
+          mkdir -p report-artifacts
+          cp -r playwright-report report-artifacts/ 2>/dev/null || true
+          cp -r test-results report-artifacts/ 2>/dev/null || true
+
+      - name: 上传拨测报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dialtest-report-${{ github.run_id }}
+          path: report-artifacts/
+          retention-days: 30
+
+      - name: 发送邮件告警（失败时）
+        if: failure()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: ${{ secrets.SMTP_HOST }}
+          server_port: ${{ secrets.SMTP_PORT }}
+          username: ${{ secrets.SMTP_USER }}
+          password: ${{ secrets.SMTP_PASS }}
+          subject: ⚠️ [拨测失败] - ${{ secrets.BASE_URL }}
+          to: ${{ secrets.ALERT_TO }}
+          from: ${{ secrets.SMTP_USER }}
+          body: |
+            拨测时间: ${{ github.event.schedule || '手动触发' }}
+            运行编号: ${{ github.run_id }}
+            站点: ${{ secrets.BASE_URL }}
+
+            拨测失败，请查看 GitHub Actions 日志获取详细信息:
+            ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

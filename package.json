@@ -1,0 +1,27 @@
+{
+  "name": "dialtest",
+  "version": "1.0.0",
+  "description": "UI 日常拨测 - Playwright + TypeScript",
+  "main": "utils/dialtest-runner.ts",
+  "scripts": {
+    "test": "npx playwright test",
+    "test:home": "npx playwright test tests/home.spec.ts",
+    "test:login": "npx playwright test tests/login.spec.ts",
+    "test:business": "npx playwright test tests/business.spec.ts",
+    "dialtest": "npx ts-node utils/dialtest-runner.ts",
+    "report": "npx playwright show-report",
+    "clean": "rimraf test-results playwright-report"
+  },
+  "keywords": ["dialtest", "playwright", "monitoring"],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "@playwright/test": "^1.61.1",
+    "@types/nodemailer": "^8.0.1",
+    "dotenv": "^17.4.2",
+    "nodemailer": "^9.0.3",
+    "ts-node": "^10.9.2",
+    "typescript": "^7.0.2"
+  }
+}
