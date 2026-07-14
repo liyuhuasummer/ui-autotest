@@ -34,11 +34,11 @@ jobs:
           LOGIN_USERNAME=${{ secrets.LOGIN_USERNAME }}
           LOGIN_PASSWORD=${{ secrets.LOGIN_PASSWORD }}
           LOGIN_CAPTCHA=${{ secrets.LOGIN_CAPTCHA }}
-          SMTP_HOST=${{ secrets.SMTP_HOST }}
-          SMTP_PORT=${{ secrets.SMTP_PORT }}
-          SMTP_USER=${{ secrets.SMTP_USER }}
-          SMTP_PASS=${{ secrets.SMTP_PASS }}
-          ALERT_TO=${{ secrets.ALERT_TO }}
+          SMTP_HOST=${{ secrets.SMTP_HOST || '' }}
+          SMTP_PORT=${{ secrets.SMTP_PORT || '465' }}
+          SMTP_USER=${{ secrets.SMTP_USER || '' }}
+          SMTP_PASS=${{ secrets.SMTP_PASS || '' }}
+          ALERT_TO=${{ secrets.ALERT_TO || '' }}
           EOF
 
       - name: 执行拨测
@@ -46,23 +46,31 @@ jobs:
         run: npx playwright test --reporter=list,html
         continue-on-error: true
 
-      - name: 生成 HTML 报告
-        if: always()
-        run: |
-          mkdir -p report-artifacts
-          cp -r playwright-report report-artifacts/ 2>/dev/null || true
-          cp -r test-results report-artifacts/ 2>/dev/null || true
-
       - name: 上传拨测报告
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: dialtest-report-${{ github.run_id }}
-          path: report-artifacts/
+          path: |
+            playwright-report/
+            test-results/
           retention-days: 30
 
-      - name: 发送邮件告警（失败时）
+      - name: 检查邮件告警是否配置
+        id: check_smtp
         if: failure()
+        run: |
+          if [ -n "$SMTP_USER" ]; then
+            echo "enabled=true" >> $GITHUB_OUTPUT
+          else
+            echo "enabled=false" >> $GITHUB_OUTPUT
+            echo "::warning::邮件告警未配置，跳过发送"
+          fi
+        env:
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+
+      - name: 发送邮件告警（失败时，需配置 SMTP）
+        if: failure() && steps.check_smtp.outputs.enabled == 'true'
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: ${{ secrets.SMTP_HOST }}
@@ -77,5 +85,5 @@ jobs:
             运行编号: ${{ github.run_id }}
             站点: ${{ secrets.BASE_URL }}
 
-            拨测失败，请查看 GitHub Actions 日志获取详细信息:
+            拨测失败，详情查看:
             ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
