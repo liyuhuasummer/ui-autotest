@@ -34,11 +34,6 @@ jobs:
           LOGIN_USERNAME=${{ secrets.LOGIN_USERNAME }}
           LOGIN_PASSWORD=${{ secrets.LOGIN_PASSWORD }}
           LOGIN_CAPTCHA=${{ secrets.LOGIN_CAPTCHA }}
-          SMTP_HOST=${{ secrets.SMTP_HOST || '' }}
-          SMTP_PORT=${{ secrets.SMTP_PORT || '465' }}
-          SMTP_USER=${{ secrets.SMTP_USER || '' }}
-          SMTP_PASS=${{ secrets.SMTP_PASS || '' }}
-          ALERT_TO=${{ secrets.ALERT_TO || '' }}
           EOF
 
       - name: 执行拨测
@@ -56,34 +51,36 @@ jobs:
             test-results/
           retention-days: 30
 
-      - name: 检查邮件告警是否配置
-        id: check_smtp
+      - name: 失败时创建 GitHub Issue
         if: failure()
-        run: |
-          if [ -n "$SMTP_USER" ]; then
-            echo "enabled=true" >> $GITHUB_OUTPUT
-          else
-            echo "enabled=false" >> $GITHUB_OUTPUT
-            echo "::warning::邮件告警未配置，跳过发送"
-          fi
-        env:
-          SMTP_USER: ${{ secrets.SMTP_USER }}
-
-      - name: 发送邮件告警（失败时，需配置 SMTP）
-        if: failure() && steps.check_smtp.outputs.enabled == 'true'
-        uses: dawidd6/action-send-mail@v3
+        uses: actions/github-script@v7
         with:
-          server_address: ${{ secrets.SMTP_HOST }}
-          server_port: ${{ secrets.SMTP_PORT }}
-          username: ${{ secrets.SMTP_USER }}
-          password: ${{ secrets.SMTP_PASS }}
-          subject: ⚠️ [拨测失败] - ${{ secrets.BASE_URL }}
-          to: ${{ secrets.ALERT_TO }}
-          from: ${{ secrets.SMTP_USER }}
-          body: |
-            拨测时间: ${{ github.event.schedule || '手动触发' }}
-            运行编号: ${{ github.run_id }}
-            站点: ${{ secrets.BASE_URL }}
+          script: |
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const issueTitle = `⚠️ 拨测失败 - ${new Date().toLocaleString('zh-CN', {timeZone: 'Asia/Shanghai'})}`;
+            const issueBody = `## 🔴 拨测失败
 
-            拨测失败，详情查看:
-            ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            **站点:** ${process.env.BASE_URL}
+            **时间:** ${new Date().toLocaleString('zh-CN', {timeZone: 'Asia/Shanghai'})}
+            **运行编号:** #${context.runNumber}
+
+            ### 失败详情
+            请查看运行日志获取详细错误信息:
+            [查看运行日志](${runUrl})
+
+            ### 报告下载
+            在 Actions 页面下载 artifact 可查看截图和视频回放:
+            [下载报告](${runUrl})
+
+            ---
+            *此 Issue 由 GitHub Actions 自动创建*`;
+
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: issueTitle,
+              body: issueBody,
+              labels: ['dialtest-failure', 'bug']
+            });
+        env:
+          BASE_URL: ${{ secrets.BASE_URL }}
